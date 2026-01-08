@@ -12,6 +12,29 @@ declare module "http" {
   }
 }
 
+// CORS middleware for Chrome extension support
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Allow requests from Chrome extensions and localhost
+  if (origin?.startsWith("chrome-extension://") || 
+      origin?.startsWith("http://localhost") ||
+      origin?.startsWith("https://localhost") ||
+      !origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin || "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+    res.setHeader("Access-Control-Max-Age", "86400");
+  }
+  
+  // Handle preflight
+  if (req.method === "OPTIONS") {
+    return res.status(204).end();
+  }
+  
+  next();
+});
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {

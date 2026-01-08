@@ -81,31 +81,33 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 // Handle save snippet request
 async function handleSaveSnippet(
   payload: SaveSnippetRequest["payload"]
-): Promise<{ success: boolean; queueId?: string; error?: string }> {
+): Promise<{ status: "pending" | "error"; queueId?: string; error?: string }> {
   
   // Validate selection
   if (!payload.text || payload.text.length < CONFIG.MIN_SELECTION_LENGTH) {
-    return { success: false, error: "Selection too short (minimum 10 characters)" };
+    return { status: "error", error: "Selection too short (minimum 10 characters)" };
   }
   
   if (payload.text.length > CONFIG.MAX_SELECTION_LENGTH) {
-    return { success: false, error: "Selection too long (maximum 10,000 characters)" };
+    return { status: "error", error: "Selection too long (maximum 10,000 characters)" };
   }
   
   // Check for duplicates
   if (await isDuplicate(payload.text, payload.sourceUrl)) {
-    return { success: false, error: "This snippet was already saved recently" };
+    return { status: "error", error: "This snippet was already saved recently" };
   }
   
-  // Add to queue
+  // Add to queue - returns pending, not success
   const queueItem = await enqueue({ payload });
   
   // Process immediately (async, don't wait)
+  // Success/failure will be broadcast when complete
   processQueueItem(queueItem).catch(err => {
     console.error("[Background] Failed to process queue item:", err);
   });
   
-  return { success: true, queueId: queueItem.id };
+  // Return pending status - content script should show "Saving..."
+  return { status: "pending", queueId: queueItem.id };
 }
 
 // Process a single queue item
@@ -143,14 +145,22 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     // Success - remove from queue
     await dequeue(item.id);
     
-    // Notify popup of success
+    // Notify ALL contexts (popup and content script) of success
     broadcastMessage({
       type: "SAVE_RESULT",
       payload: {
         success: true,
         snippetId: snippet.id,
         originalText: item.payload.text,
+        queueId: item.id,
       },
+    });
+    
+    // Also broadcast state update for popup
+    const state = await handleSyncState();
+    broadcastMessage({
+      type: "STATE_UPDATE",
+      payload: state,
     });
     
     console.log("[Background] Snippet saved successfully:", snippet.id);
@@ -177,14 +187,22 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       // Mark as failed
       await updateItemStatus(item.id, "failed", errorMessage);
       
-      // Notify popup of failure
+      // Notify ALL contexts of failure
       broadcastMessage({
         type: "SAVE_RESULT",
         payload: {
           success: false,
           error: errorMessage,
           originalText: item.payload.text,
+          queueId: item.id,
         },
+      });
+      
+      // Also broadcast state update for popup
+      const state = await handleSyncState();
+      broadcastMessage({
+        type: "STATE_UPDATE",
+        payload: state,
       });
     }
   } finally {

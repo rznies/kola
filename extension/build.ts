@@ -21,7 +21,6 @@ async function build() {
   fs.mkdirSync(path.join(distDir, "background"), { recursive: true });
   fs.mkdirSync(path.join(distDir, "content"), { recursive: true });
   fs.mkdirSync(path.join(distDir, "popup"), { recursive: true });
-  fs.mkdirSync(path.join(distDir, "assets", "icons"), { recursive: true });
   
   // Bundle background service worker
   await esbuild.build({
@@ -71,21 +70,6 @@ async function build() {
     path.join(distDir, "popup/popup.html")
   );
   console.log("  Copied popup/popup.html");
-  
-  // Create placeholder icons if they don't exist
-  const iconSizes = [16, 48, 128];
-  for (const size of iconSizes) {
-    const iconPath = path.join(distDir, `assets/icons/icon${size}.png`);
-    const sourcePath = path.join(extensionDir, `assets/icons/icon${size}.png`);
-    
-    if (fs.existsSync(sourcePath)) {
-      fs.copyFileSync(sourcePath, iconPath);
-    } else {
-      // Create a simple placeholder SVG converted to PNG
-      // For now, we'll note that icons are needed
-      console.log(`  Warning: Missing icon${size}.png - extension will need icons`);
-    }
-  }
   
   console.log("\nBuild complete! Extension ready in extension/dist/");
   console.log("\nTo install:");

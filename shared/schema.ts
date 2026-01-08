@@ -97,6 +97,7 @@ export type PendingDeletion = typeof pendingDeletions.$inferSelect;
 export const saveSnippetRequestSchema = z.object({
   text: z.string().min(1, "Text is required"),
   sourceUrl: z.string().url("Valid URL is required"),
+  sourceTitle: z.string().optional(),
   domPosition: z.string().optional(),
 });
 

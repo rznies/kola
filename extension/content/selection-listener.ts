@@ -55,6 +55,9 @@ function getSelectionWithContext(): { text: string; context: string } | null {
   return { text, context };
 }
 
+// Track pending saves to match broadcasts
+const pendingSaves = new Map<string, string>(); // queueId -> truncated text
+
 // Send save request to background
 async function saveSelection(text: string, context: string): Promise<void> {
   const metadata = getPageMetadata();
@@ -73,10 +76,13 @@ async function saveSelection(text: string, context: string): Promise<void> {
   try {
     const response = await chrome.runtime.sendMessage(message);
     
-    if (response.success) {
-      showFeedback("Saved to Knowledge Vault", "success");
-    } else if (response.error) {
-      showFeedback(response.error, "error");
+    if (response.status === "pending" && response.queueId) {
+      // Save is queued, show pending feedback
+      pendingSaves.set(response.queueId, text.slice(0, 50));
+      showFeedback("Saving...", "pending");
+    } else if (response.status === "error" || response.error) {
+      // Immediate validation error
+      showFeedback(response.error || "Failed to save", "error");
     }
   } catch (error) {
     console.error("[Content] Failed to send message:", error);
@@ -84,8 +90,26 @@ async function saveSelection(text: string, context: string): Promise<void> {
   }
 }
 
+// Listen for save result broadcasts from background
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === "SAVE_RESULT" && message.payload?.queueId) {
+    const { queueId, success, error } = message.payload;
+    
+    // Only show feedback if we initiated this save
+    if (pendingSaves.has(queueId)) {
+      pendingSaves.delete(queueId);
+      
+      if (success) {
+        showFeedback("Saved to Knowledge Vault", "success");
+      } else {
+        showFeedback(error || "Failed to save", "error");
+      }
+    }
+  }
+});
+
 // Show visual feedback to user
-function showFeedback(message: string, type: "success" | "error"): void {
+function showFeedback(message: string, type: "success" | "error" | "pending"): void {
   // Remove existing feedback
   const existing = document.getElementById("skc-feedback");
   if (existing) {
@@ -95,6 +119,13 @@ function showFeedback(message: string, type: "success" | "error"): void {
   const feedback = document.createElement("div");
   feedback.id = "skc-feedback";
   feedback.textContent = message;
+  
+  // Choose color based on type
+  const colors: Record<typeof type, string> = {
+    success: "#10b981",
+    error: "#ef4444",
+    pending: "#6366f1",
+  };
   
   // Style the feedback toast
   Object.assign(feedback.style, {
@@ -111,7 +142,7 @@ function showFeedback(message: string, type: "success" | "error"): void {
     transition: "opacity 0.3s, transform 0.3s",
     opacity: "0",
     transform: "translateY(10px)",
-    backgroundColor: type === "success" ? "#10b981" : "#ef4444",
+    backgroundColor: colors[type],
     color: "#ffffff",
   });
   
@@ -123,12 +154,19 @@ function showFeedback(message: string, type: "success" | "error"): void {
     feedback.style.transform = "translateY(0)";
   });
   
-  // Remove after delay
+  // Remove after delay (longer for pending since success/error will replace it)
+  const delay = type === "pending" ? 10000 : 3000;
   setTimeout(() => {
-    feedback.style.opacity = "0";
-    feedback.style.transform = "translateY(10px)";
-    setTimeout(() => feedback.remove(), 300);
-  }, 3000);
+    // Only fade out if this is still the current feedback
+    const current = document.getElementById("skc-feedback");
+    if (current === feedback) {
+      feedback.style.opacity = "0";
+      feedback.style.transform = "translateY(10px)";
+      setTimeout(() => {
+        if (feedback.parentNode) feedback.remove();
+      }, 300);
+    }
+  }, delay);
 }
 
 // Handle keyboard shortcut (Ctrl/Cmd + Shift + S)

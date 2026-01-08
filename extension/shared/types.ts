@@ -26,6 +26,7 @@ export interface SaveResultMessage {
     snippetId?: string;
     error?: string;
     originalText: string; // for matching pending items
+    queueId?: string; // for matching content script pending saves
   };
 }
 
