@@ -107,23 +107,32 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
 async function handleSaveSnippet(
   payload: SaveSnippetRequest["payload"]
 ): Promise<{ status: "pending" | "error"; queueId?: string; error?: string }> {
+  console.log("[Background] handleSaveSnippet called with:", { 
+    textLength: payload.text?.length, 
+    sourceUrl: payload.sourceUrl 
+  });
   
   // Validate selection
   if (!payload.text || payload.text.length < CONFIG.MIN_SELECTION_LENGTH) {
+    console.log("[Background] Validation failed: text too short");
     return { status: "error", error: "Selection too short (minimum 10 characters)" };
   }
   
   if (payload.text.length > CONFIG.MAX_SELECTION_LENGTH) {
+    console.log("[Background] Validation failed: text too long");
     return { status: "error", error: "Selection too long (maximum 10,000 characters)" };
   }
   
   // Check for duplicates
   if (await isDuplicate(payload.text, payload.sourceUrl)) {
+    console.log("[Background] Validation failed: duplicate");
     return { status: "error", error: "This snippet was already saved recently" };
   }
   
   // Add to queue
+  console.log("[Background] Adding to queue...");
   const queueItem = await enqueue({ payload });
+  console.log("[Background] Queue item created:", queueItem.id);
   
   // Process immediately (async, don't wait)
   processQueueItem(queueItem).catch(err => {
@@ -135,7 +144,10 @@ async function handleSaveSnippet(
 
 // Process a single queue item
 async function processQueueItem(item: QueueItem): Promise<void> {
+  console.log("[Background] processQueueItem started:", item.id);
+  
   if (processingIds.has(item.id)) {
+    console.log("[Background] Already processing:", item.id);
     return;
   }
   processingIds.add(item.id);
@@ -143,8 +155,11 @@ async function processQueueItem(item: QueueItem): Promise<void> {
   try {
     await updateItemStatus(item.id, "saving");
     
+    const url = `${CONFIG.API_BASE_URL}/api/snippets`;
+    console.log("[Background] Sending POST to:", url);
+    
     const response = await fetchWithRetry(
-      `${CONFIG.API_BASE_URL}/api/snippets`,
+      url,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -157,12 +172,15 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       item.retryCount
     );
     
+    console.log("[Background] Response status:", response.status);
+    
     if (!response.ok) {
       const error = await response.json().catch(() => ({ error: "Unknown error" }));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
     
     const snippet: SnippetResponse = await response.json();
+    console.log("[Background] Snippet saved:", snippet.id);
     
     // Success - remove from queue
     await dequeue(item.id);
@@ -189,7 +207,7 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error("[Background] Failed to save snippet:", errorMessage);
+    console.error("[Background] Failed to save snippet:", errorMessage, error);
     
     if (item.retryCount < CONFIG.MAX_RETRIES && isRetryableError(error)) {
       await updateItemStatus(item.id, "pending", errorMessage);

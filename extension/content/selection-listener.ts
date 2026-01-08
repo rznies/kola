@@ -136,6 +136,8 @@ async function handleSaveClick(e: Event) {
 async function saveSelection(text: string, context: string): Promise<void> {
   const metadata = getPageMetadata();
   
+  console.log("[Content] Saving selection:", { textLength: text.length, url: metadata.url });
+  
   const message: SaveSnippetRequest = {
     type: "SAVE_SNIPPET",
     payload: {
@@ -148,17 +150,24 @@ async function saveSelection(text: string, context: string): Promise<void> {
   };
   
   try {
+    console.log("[Content] Sending message to background...");
     const response = await chrome.runtime.sendMessage(message);
+    console.log("[Content] Response from background:", response);
     
-    if (response.status === "pending" && response.queueId) {
+    if (response?.status === "pending" && response?.queueId) {
       pendingSaves.set(response.queueId, text.slice(0, 50));
+      console.log("[Content] Save queued, waiting for result...");
       // Button will be updated by message listener
-    } else if (response.status === "error" || response.error) {
-      showButtonError(response.error || "Failed to save");
+    } else if (response?.status === "error" || response?.error) {
+      console.error("[Content] Save error:", response?.error);
+      showButtonError(response?.error || "Failed to save");
+    } else if (!response) {
+      console.error("[Content] No response from background");
+      showButtonError("Extension error");
     }
   } catch (error) {
     console.error("[Content] Failed to send message:", error);
-    showButtonError("Failed to save");
+    showButtonError("Connection failed");
   }
 }
 
