@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Knowledge Vault</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <header class="header">
+      <div class="header-left">
+        <svg class="logo-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>
+        </svg>
+        <span class="header-title">Knowledge Vault</span>
+      </div>
+      <div class="header-right">
+        <button id="btn-new-chat" class="btn btn-icon" title="New Chat">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="chat">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        Chat
+      </button>
+      <button class="tab" data-tab="snippets">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+        Snippets
+      </button>
+      <button class="tab" data-tab="threads">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="8" y1="6" x2="21" y2="6"/>
+          <line x1="8" y1="12" x2="21" y2="12"/>
+          <line x1="8" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="6" x2="3.01" y2="6"/>
+          <line x1="3" y1="12" x2="3.01" y2="12"/>
+          <line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+        History
+      </button>
+    </nav>
+
+    <main class="content">
+      <!-- Chat Tab -->
+      <div id="tab-chat" class="tab-content active">
+        <div id="chat-messages" class="chat-messages">
+          <div class="empty-state">
+            <div class="empty-icon">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+              </svg>
+            </div>
+            <h3>Ask about your saved knowledge</h3>
+            <p>I only answer using snippets you've saved. No hallucinations, just your knowledge with citations.</p>
+          </div>
+        </div>
+        <div class="chat-input-container">
+          <div class="chat-input-wrapper">
+            <textarea id="chat-input" placeholder="Ask about your saved snippets..." rows="1"></textarea>
+            <button id="btn-send" class="btn btn-primary btn-send" disabled>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+          <div class="chat-input-hint">
+            <span id="snippet-count">0 snippets</span> in your vault
+          </div>
+        </div>
+      </div>
+
+      <!-- Snippets Tab -->
+      <div id="tab-snippets" class="tab-content">
+        <div class="snippets-header">
+          <div class="search-box">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input type="text" id="search-snippets" placeholder="Search snippets...">
+          </div>
+          <button id="btn-export" class="btn btn-outline" title="Export">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Export
+          </button>
+        </div>
+        <div id="snippets-list" class="snippets-list">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Loading snippets...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Threads Tab -->
+      <div id="tab-threads" class="tab-content">
+        <div id="threads-list" class="threads-list">
+          <div class="loading-state">
+            <div class="spinner"></div>
+            <span>Loading conversations...</span>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Toast container -->
+    <div id="toast-container"></div>
+  </div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

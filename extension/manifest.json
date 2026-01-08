@@ -7,7 +7,8 @@
   "permissions": [
     "activeTab",
     "storage",
-    "contextMenus"
+    "contextMenus",
+    "sidePanel"
   ],
   
   "host_permissions": [
@@ -23,12 +24,22 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content/selection-listener.js"],
+      "css": ["content/styles.css"],
       "run_at": "document_idle"
     }
   ],
   
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
+  
   "action": {
-    "default_popup": "popup/popup.html",
-    "default_title": "Saved Knowledge Chat"
+    "default_title": "Open Knowledge Vault"
+  },
+  
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
   }
 }

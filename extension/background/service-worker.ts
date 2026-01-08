@@ -1,4 +1,4 @@
-// Background Service Worker - Central message router and API caller
+// Background Service Worker - Central message router, API caller, and side panel controller
 
 import { 
   ExtensionMessage, 
@@ -31,6 +31,16 @@ chrome.runtime.onInstalled.addListener(() => {
     title: "Save to Knowledge Vault",
     contexts: ["selection"],
   });
+  
+  // Set side panel behavior - open on action click
+  chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
+});
+
+// Handle action click (extension icon) - open side panel
+chrome.action.onClicked.addListener((tab) => {
+  if (tab.id) {
+    chrome.sidePanel.open({ tabId: tab.id });
+  }
 });
 
 // Handle context menu clicks
@@ -44,10 +54,18 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
     };
     
     await handleSaveSnippet(payload);
+    
+    // Send feedback to content script
+    if (tab.id) {
+      chrome.tabs.sendMessage(tab.id, {
+        type: "CONTEXT_MENU_SAVE",
+        payload,
+      }).catch(() => {});
+    }
   }
 });
 
-// Listen for messages from content script and popup
+// Listen for messages from content script and side panel
 chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendResponse) => {
   console.log("[Background] Received message:", message.type);
   
@@ -56,7 +74,7 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
       handleSaveSnippet(message.payload)
         .then(result => sendResponse(result))
         .catch(err => sendResponse({ success: false, error: err.message }));
-      return true; // Keep channel open for async response
+      return true;
       
     case "SYNC_STATE":
       handleSyncState()
@@ -74,6 +92,13 @@ chrome.runtime.onMessage.addListener((message: ExtensionMessage, sender, sendRes
       dequeue(message.payload.queueId)
         .then(() => sendResponse({ success: true }))
         .catch(err => sendResponse({ success: false, error: err.message }));
+      return true;
+      
+    case "OPEN_SIDE_PANEL":
+      if (sender.tab?.id) {
+        chrome.sidePanel.open({ tabId: sender.tab.id });
+      }
+      sendResponse({ success: true });
       return true;
   }
 });
@@ -97,22 +122,19 @@ async function handleSaveSnippet(
     return { status: "error", error: "This snippet was already saved recently" };
   }
   
-  // Add to queue - returns pending, not success
+  // Add to queue
   const queueItem = await enqueue({ payload });
   
   // Process immediately (async, don't wait)
-  // Success/failure will be broadcast when complete
   processQueueItem(queueItem).catch(err => {
     console.error("[Background] Failed to process queue item:", err);
   });
   
-  // Return pending status - content script should show "Saving..."
   return { status: "pending", queueId: queueItem.id };
 }
 
 // Process a single queue item
 async function processQueueItem(item: QueueItem): Promise<void> {
-  // Prevent duplicate processing
   if (processingIds.has(item.id)) {
     return;
   }
@@ -145,7 +167,7 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     // Success - remove from queue
     await dequeue(item.id);
     
-    // Notify ALL contexts (popup and content script) of success
+    // Notify ALL contexts of success
     broadcastMessage({
       type: "SAVE_RESULT",
       payload: {
@@ -156,7 +178,7 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       },
     });
     
-    // Also broadcast state update for popup
+    // Also broadcast state update
     const state = await handleSyncState();
     broadcastMessage({
       type: "STATE_UPDATE",
@@ -169,11 +191,9 @@ async function processQueueItem(item: QueueItem): Promise<void> {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
     console.error("[Background] Failed to save snippet:", errorMessage);
     
-    // Check if we should retry
     if (item.retryCount < CONFIG.MAX_RETRIES && isRetryableError(error)) {
       await updateItemStatus(item.id, "pending", errorMessage);
       
-      // Schedule retry with exponential backoff
       const delay = Math.min(
         CONFIG.INITIAL_RETRY_DELAY_MS * Math.pow(2, item.retryCount),
         CONFIG.MAX_RETRY_DELAY_MS
@@ -184,10 +204,8 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       }, delay);
       
     } else {
-      // Mark as failed
       await updateItemStatus(item.id, "failed", errorMessage);
       
-      // Notify ALL contexts of failure
       broadcastMessage({
         type: "SAVE_RESULT",
         payload: {
@@ -198,7 +216,6 @@ async function processQueueItem(item: QueueItem): Promise<void> {
         },
       });
       
-      // Also broadcast state update for popup
       const state = await handleSyncState();
       broadcastMessage({
         type: "STATE_UPDATE",
@@ -227,7 +244,7 @@ async function fetchWithRetry(
   retryCount: number
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  const timeout = setTimeout(() => controller.abort(), 30000);
   
   try {
     const response = await fetch(url, {
@@ -240,14 +257,12 @@ async function fetchWithRetry(
   }
 }
 
-// Check if error is retryable (network/5xx vs 4xx)
+// Check if error is retryable
 function isRetryableError(error: unknown): boolean {
   if (error instanceof Error) {
-    // Network errors are retryable
     if (error.name === "AbortError" || error.message.includes("network")) {
       return true;
     }
-    // 5xx errors are retryable
     if (error.message.includes("HTTP 5")) {
       return true;
     }
@@ -257,12 +272,10 @@ function isRetryableError(error: unknown): boolean {
 
 // Broadcast message to all extension contexts
 function broadcastMessage(message: SaveResultMessage | StateUpdateMessage): void {
-  chrome.runtime.sendMessage(message).catch(() => {
-    // Popup might not be open, ignore error
-  });
+  chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-// Handle sync state request from popup
+// Handle sync state request
 async function handleSyncState(): Promise<StateUpdateMessage["payload"]> {
   const queue = await getQueue();
   
@@ -282,7 +295,6 @@ async function processPendingOnStartup(): Promise<void> {
   const pending = await getPendingItems();
   
   for (const item of pending) {
-    // Stagger processing to avoid overwhelming the backend
     await new Promise(resolve => setTimeout(resolve, 500));
     await processQueueItem(item);
   }
@@ -297,7 +309,7 @@ function extractDomain(url: string): string {
   }
 }
 
-// Listen for online/offline events to retry pending
+// Listen for online/offline events
 self.addEventListener("online", () => {
   console.log("[Background] Back online, processing pending items");
   processPendingOnStartup();
