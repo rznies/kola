@@ -47,10 +47,18 @@ export function useChat(threadId: string | null) {
     setStreamingContent("");
 
     try {
+      // Get preferred provider from localStorage if not specified in thread
+      // Note: backend will default if we send nothing, but we prefer local override
+      const savedProvider = localStorage.getItem("ai_provider") || undefined;
+      
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ threadId, query }),
+        body: JSON.stringify({ 
+          threadId, 
+          query,
+          provider: savedProvider 
+        }),
       });
 
       if (!response.ok) {

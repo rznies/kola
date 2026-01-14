@@ -3,6 +3,7 @@ import { ChevronDown, ChevronUp, User, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CitationCard } from "./snippet-card";
 import { Badge } from "@/components/ui/badge";
+import { ModelBadge } from "./model-badge";
 
 interface Citation {
   id: string;
@@ -15,10 +16,11 @@ interface ChatMessageProps {
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
+  provider?: string;
   isStreaming?: boolean;
 }
 
-export function ChatMessage({ role, content, citations = [], isStreaming }: ChatMessageProps) {
+export function ChatMessage({ role, content, citations = [], provider, isStreaming }: ChatMessageProps) {
   const [showCitations, setShowCitations] = useState(false);
   const hasCitations = citations.length > 0;
 
@@ -28,8 +30,11 @@ export function ChatMessage({ role, content, citations = [], isStreaming }: Chat
       data-testid={`message-${role}`}
     >
       {role === "assistant" && (
-        <div className="flex-shrink-0 w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
-          <Bot className="h-4 w-4 text-primary" />
+        <div className="flex-shrink-0">
+          <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center">
+            <Bot className="h-4 w-4 text-primary" />
+          </div>
+          {provider && <ModelBadge provider={provider} className="mt-1" />}
         </div>
       )}
       

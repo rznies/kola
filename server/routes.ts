@@ -2,14 +2,10 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { saveSnippetRequestSchema, chatRequestSchema } from "@shared/schema";
-import OpenAI from "openai";
 import { fromError } from "zod-validation-error";
-
-// Initialize OpenAI with Replit AI Integrations
-const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
-});
+import { z } from "zod";
+import { getAvailableProviders, getDefaultProviderName, streamChat } from "./ai/client";
+import type { ProviderName } from "./ai/types";
 
 // Helper to extract domain from URL
 function extractDomain(url: string): string {
@@ -101,6 +97,38 @@ export async function registerRoutes(
       console.error("Error restoring snippet:", error);
       res.status(500).json({ error: "Failed to restore snippet" });
     }
+  });
+
+  // ===== AI PROVIDERS =====
+  
+  // Get available AI providers
+  app.get("/api/ai/providers", async (req: Request, res: Response) => {
+    try {
+      const providers = getAvailableProviders();
+      const defaultProvider = getDefaultProviderName();
+      res.json({ providers, defaultProvider });
+    } catch (error) {
+      console.error("Error fetching providers:", error);
+      res.status(500).json({ error: "Failed to fetch AI providers" });
+    }
+  });
+
+  // ===== USER PREFERENCES =====
+  
+  // Get user preferences
+  app.get("/api/user/preferences", async (req: Request, res: Response) => {
+    // Deprecated: Client uses localStorage now.
+    res.json({ aiProvider: null });
+  });
+
+  // Update user preferences
+  const updatePreferencesSchema = z.object({
+    aiProvider: z.enum(["openai", "groq", "gemini"]).nullable().optional(),
+  });
+
+  app.patch("/api/user/preferences", async (req: Request, res: Response) => {
+    // Deprecated: Client uses localStorage now.
+    res.json({ aiProvider: req.body.aiProvider || null });
   });
 
   // ===== THREADS =====
@@ -220,7 +248,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: validationError.message });
       }
 
-      const { threadId, query } = parseResult.data;
+      const { threadId, query, provider: requestedProvider } = parseResult.data;
+
+      // Determine which provider to use
+      let selectedProvider: ProviderName | null = null;
+      if (requestedProvider) {
+        selectedProvider = requestedProvider;
+      } else {
+        // Use user preference or default
+        const prefs = await storage.getPreferences();
+        selectedProvider = prefs.aiProvider || getDefaultProviderName();
+      }
 
       // Verify thread exists
       const thread = await storage.getThread(threadId);
@@ -236,14 +274,25 @@ export async function registerRoutes(
       });
 
       // Search for relevant snippets
-      const searchResults = await storage.searchSnippets(query, 5);
+      let searchResults = await storage.searchSnippets(query, 5);
       
+      // FALLBACK: If no specific snippets found but user asked something, 
+      // include the 5 most recent snippets as context. 
+      // This helps with general questions like "summarize my notes".
+      if (searchResults.length === 0) {
+        console.log(`[Chat] No keyword matches for "${query}", falling back to recent snippets`);
+        const allSnippets = await storage.getAllSnippets();
+        if (allSnippets.length > 0) {
+          searchResults = allSnippets.slice(0, 5).map(s => ({ snippet: s, score: 0.1 }));
+        }
+      }
+
       // Set up SSE
       res.setHeader("Content-Type", "text/event-stream");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
-
-      // If no relevant snippets found
+      
+      // If still no snippets found (vault is empty)
       if (searchResults.length === 0) {
         const noDataResponse = "You haven't saved anything related to this yet. Try saving some snippets about this topic first.";
         
@@ -289,23 +338,20 @@ Answer the user's question using ONLY the information above.`;
         content: m.content,
       }));
 
-      // Stream response from OpenAI
-      const stream = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...chatHistory,
-        ],
-        stream: true,
-        max_completion_tokens: 1024,
-      });
-
+      // Stream response using the selected provider
       let fullResponse = "";
       let streamError: Error | null = null;
 
+      console.log(`[Chat] Starting stream for thread ${threadId} using provider ${selectedProvider}`);
+
       try {
-        for await (const chunk of stream) {
-          const content = chunk.choices[0]?.delta?.content || "";
+        const aiStream = streamChat(selectedProvider as ProviderName, {
+          messages: chatHistory,
+          systemPrompt,
+          maxTokens: 1024,
+        });
+
+        for await (const content of aiStream) {
           if (content) {
             fullResponse += content;
             res.write(`data: ${JSON.stringify({ content })}\n\n`);
@@ -313,7 +359,7 @@ Answer the user's question using ONLY the information above.`;
         }
       } catch (err) {
         streamError = err instanceof Error ? err : new Error(String(err));
-        console.error("Error during stream:", streamError);
+        console.error("[Chat] Error during stream:", streamError);
       }
 
       // Only save assistant message if streaming completed successfully with content
@@ -334,7 +380,7 @@ Answer the user's question using ONLY the information above.`;
           sourceDomain: s.sourceDomain,
         }));
 
-        res.write(`data: ${JSON.stringify({ citations: citationsData, done: true })}\n\n`);
+        res.write(`data: ${JSON.stringify({ citations: citationsData, provider: selectedProvider, done: true })}\\n\\n`);
 
         // Update thread title based on first message if it's still default
         if (thread.title === "New conversation") {

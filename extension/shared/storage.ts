@@ -12,7 +12,7 @@ export function generateQueueId(): string {
 // Get the current save queue
 export async function getQueue(): Promise<QueueItem[]> {
   try {
-    const result = await chrome.storage.session.get(QUEUE_KEY);
+    const result = await chrome.storage.local.get(QUEUE_KEY);
     return result[QUEUE_KEY] || [];
   } catch (error) {
     console.error("[Storage] Failed to get queue:", error);
@@ -23,7 +23,7 @@ export async function getQueue(): Promise<QueueItem[]> {
 // Save the queue
 async function saveQueue(queue: QueueItem[]): Promise<void> {
   try {
-    await chrome.storage.session.set({ [QUEUE_KEY]: queue });
+    await chrome.storage.local.set({ [QUEUE_KEY]: queue });
   } catch (error) {
     console.error("[Storage] Failed to save queue:", error);
     throw error;

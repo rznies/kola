@@ -2,6 +2,8 @@ import { useRef, useEffect } from "react";
 import { ChatMessage } from "./chat-message";
 import { ChatInput } from "./chat-input";
 import { ThreadSelector } from "./thread-selector";
+import { ProviderSelector } from "./provider-selector";
+import { SettingsDialog } from "./settings-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { MessageSquare, AlertCircle } from "lucide-react";
@@ -14,6 +16,7 @@ interface ChatInterfaceProps {
     id: string;
     role: "user" | "assistant";
     content: string;
+    provider?: string;
     citations?: Array<{
       id: string;
       text: string;
@@ -22,6 +25,8 @@ interface ChatInterfaceProps {
     }>;
   }>;
   streamingContent?: string;
+  streamingProvider?: string;
+  selectedProvider?: string;
   isLoadingThreads: boolean;
   isLoadingMessages: boolean;
   isSending: boolean;
@@ -30,6 +35,7 @@ interface ChatInterfaceProps {
   onCreateThread: () => void;
   onDeleteThread: (threadId: string) => void;
   onSendMessage: (message: string) => void;
+  onProviderChange?: (provider: string) => void;
 }
 
 export function ChatInterface({
@@ -37,6 +43,8 @@ export function ChatInterface({
   activeThreadId,
   messages,
   streamingContent,
+  streamingProvider,
+  selectedProvider,
   isLoadingThreads,
   isLoadingMessages,
   isSending,
@@ -45,6 +53,7 @@ export function ChatInterface({
   onCreateThread,
   onDeleteThread,
   onSendMessage,
+  onProviderChange,
 }: ChatInterfaceProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -58,15 +67,24 @@ export function ChatInterface({
   return (
     <div className="flex flex-col h-full">
       {/* Thread selector header */}
-      <div className="p-4 border-b">
-        <ThreadSelector
-          threads={threads}
-          activeThreadId={activeThreadId}
-          onSelect={onSelectThread}
-          onCreate={onCreateThread}
-          onDelete={onDeleteThread}
-          isLoading={isLoadingThreads}
-        />
+      <div className="p-4 border-b space-y-3">
+        <div className="flex items-center justify-between">
+          <ThreadSelector
+            threads={threads}
+            activeThreadId={activeThreadId}
+            onSelect={onSelectThread}
+            onCreate={onCreateThread}
+            onDelete={onDeleteThread}
+            isLoading={isLoadingThreads}
+          />
+          <SettingsDialog />
+        </div>
+        {onProviderChange && (
+          <ProviderSelector
+            value={selectedProvider}
+            onChange={onProviderChange}
+          />
+        )}
       </div>
 
       {/* Messages area */}
@@ -118,6 +136,7 @@ export function ChatInterface({
                     role={message.role}
                     content={message.content}
                     citations={message.citations}
+                    provider={message.provider}
                   />
                 ))
               )}
@@ -125,6 +144,7 @@ export function ChatInterface({
                 <ChatMessage
                   role="assistant"
                   content={streamingContent}
+                  provider={streamingProvider}
                   isStreaming
                 />
               )}

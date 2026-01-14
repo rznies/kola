@@ -106,8 +106,8 @@ export interface ApiError {
 // ===== Configuration =====
 
 export const CONFIG = {
-  // Backend URL - use actual Replit URL for extension to connect
-  API_BASE_URL: "https://3e13fff8-87a0-49d0-82c6-53833f94708c-00-30yu2dauhp34e.kirk.replit.dev",
+  // Backend URL - use localhost for development
+  API_BASE_URL: "http://localhost:5000",
   
   // Retry settings
   MAX_RETRIES: 3,

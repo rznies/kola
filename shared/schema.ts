@@ -43,6 +43,7 @@ export type Snippet = typeof snippets.$inferSelect;
 export const threads = pgTable("threads", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   title: text("title").notNull(),
+  aiProvider: text("ai_provider"), // Track which AI provider was used (optional)
   createdAt: timestamp("created_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
   updatedAt: timestamp("updated_at").default(sql`CURRENT_TIMESTAMP`).notNull(),
 });
@@ -106,6 +107,7 @@ export type SaveSnippetRequest = z.infer<typeof saveSnippetRequestSchema>;
 export const chatRequestSchema = z.object({
   threadId: z.string(),
   query: z.string().min(1, "Query is required"),
+  provider: z.enum(["openai", "groq", "gemini"]).optional(),
 });
 
 export type ChatRequest = z.infer<typeof chatRequestSchema>;

@@ -1,0 +1,146 @@
+{
+  "project": "Saved Knowledge Chat",
+  "branchName": "ralph/appwrite-migration",
+  "description": "Migrate backend to Appwrite (BaaS) for Auth, DB, and Vector Search, and configure for Vercel deployment.",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Install Appwrite dependencies and config",
+      "description": "As a developer, I need the Appwrite SDKs installed to interact with the backend.",
+      "acceptanceCriteria": [
+        "Install `appwrite` and `node-appwrite` packages",
+        "Create `.env.example` with VITE_APPWRITE_ENDPOINT, VITE_APPWRITE_PROJECT_ID, APPWRITE_API_KEY",
+        "Typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Verified package.json and .env.example"
+    },
+    {
+      "id": "US-002",
+      "title": "Create Appwrite Service Module",
+      "description": "As a developer, I need a centralized service to initialize the Appwrite server client.",
+      "acceptanceCriteria": [
+        "Create `server/services/appwrite.ts`",
+        "Initialize `Client` and `Databases` from `node-appwrite` using env vars",
+        "Export the initialized client/db instances",
+        "Typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Verified server/services/appwrite.ts"
+    },
+    {
+      "id": "US-003",
+      "title": "Create AppwriteStorage Skeleton",
+      "description": "As a developer, I need a class that implements the IStorage interface using Appwrite.",
+      "acceptanceCriteria": [
+        "Create `server/storage/appwrite.ts`",
+        "Implement `IStorage` interface with method stubs (throw 'Not Implemented' for now)",
+        "Ensure class constructor takes necessary config",
+        "Typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "Verified AppwriteStorage class existence"
+    },
+    {
+      "id": "US-004",
+      "title": "Implement Snippet Operations in AppwriteStorage",
+      "description": "As a developer, I need to save and retrieve snippets from Appwrite.",
+      "acceptanceCriteria": [
+        "Implement `createSnippet` using `databases.createDocument`",
+        "Implement `getAllSnippets` using `databases.listDocuments`",
+        "Implement `getSnippet` using `databases.getDocument`",
+        "Typecheck passes"
+      ],
+      "priority": 4,
+      "passes": true,
+      "notes": "Verified snippet operations implementation"
+    },
+    {
+      "id": "US-005",
+      "title": "Implement Thread and Message Operations",
+      "description": "As a developer, I need to save chat history to Appwrite.",
+      "acceptanceCriteria": [
+        "Implement `createThread`, `getThread`, `getAllThreads`",
+        "Implement `createMessage`, `getMessagesByThread`",
+        "Ensure `threadId` is correctly handled in message queries",
+        "Typecheck passes"
+      ],
+      "priority": 5,
+      "passes": true,
+      "notes": "Verified thread/message operations implementation"
+    },
+    {
+      "id": "US-006",
+      "title": "Switch Server Storage to Appwrite",
+      "description": "As a developer, I need the server to use the real Appwrite storage instead of memory.",
+      "acceptanceCriteria": [
+        "Update `server/storage.ts` to export `AppwriteStorage` instance",
+        "Remove `MemStorage` usage (or keep as fallback/dev only if preferred, but goal is migration)",
+        "Typecheck passes"
+      ],
+      "priority": 6,
+      "passes": true,
+      "notes": "Verified storage export in server/storage/index.ts"
+    },
+    {
+      "id": "US-007",
+      "title": "Create Frontend Auth Context",
+      "description": "As a developer, I need to manage user authentication state on the client.",
+      "acceptanceCriteria": [
+        "Create `client/src/contexts/auth-context.tsx`",
+        "Use `appwrite` Web SDK `Account` service",
+        "Provide `user`, `login`, `register`, `logout`, `loading` states",
+        "Typecheck passes"
+      ],
+      "priority": 7,
+      "passes": true,
+      "notes": "Verified auth context implementation"
+    },
+    {
+      "id": "US-008",
+      "title": "Create Login Page",
+      "description": "As a user, I need to log in to access my data.",
+      "acceptanceCriteria": [
+        "Create `client/src/pages/auth.tsx` (or separate login/register)",
+        "Implement Email/Password login form",
+        "Call `login` from AuthContext",
+        "Handle errors (invalid credentials)",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 8,
+      "passes": true,
+      "notes": "Verified auth page implementation"
+    },
+    {
+      "id": "US-009",
+      "title": "Implement Protected Routes",
+      "description": "As a developer, I need to prevent unauthenticated access to the app.",
+      "acceptanceCriteria": [
+        "Create `client/src/components/protected-route.tsx`",
+        "Update `App.tsx` to wrap main routes",
+        "Redirect unauthenticated users to `/auth`",
+        "Verify in browser using dev-browser skill"
+      ],
+      "priority": 9,
+      "passes": true,
+      "notes": "Verified protected route component"
+    },
+    {
+      "id": "US-010",
+      "title": "Configure Vercel Deployment",
+      "description": "As a developer, I need the app to run on Vercel.",
+      "acceptanceCriteria": [
+        "Create `vercel.json` with rewrites",
+        "Create `api/index.ts` adapter for Express",
+        "Refactor `server/index.ts` to export `app` for the adapter",
+        "Typecheck passes"
+      ],
+      "priority": 10,
+      "passes": true,
+      "notes": "Created vercel.json, confirmed api/index.ts, fixed AppwriteStorage runtime gaps"
+    }
+  ]
+}

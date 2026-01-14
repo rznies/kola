@@ -48,6 +48,8 @@ let snippets: Snippet[] = [];
 let threads: Thread[] = [];
 let messages: Message[] = [];
 let isLoading = false;
+let selectedProvider: string | null = null;
+let availableProviders: Array<{ name: string; displayName: string; models: string[]; available: boolean }> = [];
 
 // DOM Elements
 const chatMessages = document.getElementById("chat-messages")!;
@@ -64,12 +66,16 @@ const toastContainer = document.getElementById("toast-container")!;
 // Initialize
 async function init() {
   setupEventListeners();
-  await Promise.all([loadSnippets(), loadThreads()]);
+  await Promise.all([loadSnippets(), loadThreads(), loadProviders()]);
   
   // Load last active thread from storage
-  const stored = await chrome.storage.local.get("lastThreadId");
+  const stored = await chrome.storage.local.get(["lastThreadId", "selectedProvider"]);
   if (stored.lastThreadId && threads.find(t => t.id === stored.lastThreadId)) {
     await selectThread(stored.lastThreadId);
+  }
+  if (stored.selectedProvider) {
+    selectedProvider = stored.selectedProvider;
+    updateProviderSelector();
   }
   
   updateSnippetCount();
@@ -144,6 +150,7 @@ async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> 
     ...options,
     headers: {
       "Content-Type": "application/json",
+      "Origin": `chrome-extension://${chrome.runtime.id}`,
       ...options?.headers,
     },
   });
@@ -178,7 +185,8 @@ async function loadThreads() {
 
 async function loadMessages(threadId: number) {
   try {
-    messages = await fetchAPI<Message[]>(`/api/threads/${threadId}/messages`);
+    const data = await fetchAPI<{ thread: Thread; messages: Message[] }>(`/api/threads/${threadId}`);
+    messages = data.messages;
     renderMessages();
   } catch (error) {
     console.error("Failed to load messages:", error);
@@ -310,42 +318,88 @@ async function sendMessage() {
   btnSend.disabled = true;
   autoResizeTextarea();
   
-  // Show typing indicator
+  // Start streaming
   isLoading = true;
-  showTypingIndicator();
+  
+  const assistantMsgId = Date.now() + 1;
+  const assistantMessage: Message = {
+    id: assistantMsgId,
+    threadId: currentThreadId!,
+    role: "assistant",
+    content: "",
+    createdAt: new Date().toISOString(),
+    citations: [],
+  };
+  messages.push(assistantMessage);
+  renderMessages();
+  
+  const messageElement = chatMessages.querySelector(`[data-id="${assistantMsgId}"] .message-text`);
+  const messageContainer = chatMessages.querySelector(`[data-id="${assistantMsgId}"]`);
   
   try {
-    const response = await fetchAPI<ChatResponse>("/api/chat", {
+    const response = await fetch(`${CONFIG.API_BASE_URL}/api/chat`, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Origin": `chrome-extension://${chrome.runtime.id}`,
+      },
       body: JSON.stringify({
         threadId: currentThreadId,
-        message: content,
+        query: content,
+        provider: selectedProvider,
       }),
     });
-    
-    // Add assistant message
-    const assistantMessage: Message = {
-      ...response.message,
-      citations: response.citations,
-    };
-    messages.push(assistantMessage);
-    
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: "Failed to connect" }));
+      throw new Error(errorData.error || `HTTP ${response.status}`);
+    }
+
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error("No reader available");
+
+    const decoder = new TextDecoder();
+    let accumulatedContent = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split("\n");
+
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            
+            if (data.content) {
+              accumulatedContent += data.content;
+              assistantMessage.content = accumulatedContent;
+              if (messageElement) {
+                messageElement.innerHTML = formatMessageContent(accumulatedContent);
+              }
+              chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            
+            if (data.citations) {
+              assistantMessage.citations = data.citations;
+              // Re-render message with citations at the end
+              renderMessages();
+            }
+          } catch (e) {
+            // Ignore partial JSON
+          }
+        }
+      }
+    }
   } catch (error) {
     console.error("Failed to send message:", error);
-    
-    // Add error message
-    messages.push({
-      id: Date.now(),
-      threadId: currentThreadId!,
-      role: "assistant",
-      content: "I'm sorry, I couldn't process your request. Please try again.",
-      createdAt: new Date().toISOString(),
-    });
-    
+    assistantMessage.content = "I'm sorry, I couldn't process your request. Please check your API key and connection.";
+    renderMessages();
     showToast("Failed to get response", "error");
   } finally {
     isLoading = false;
-    hideTypingIndicator();
     renderMessages();
   }
 }
@@ -400,7 +454,7 @@ function renderMessages() {
     }
     
     return `
-      <div class="message">
+      <div class="message" data-id="${msg.id}">
         <div class="message-avatar ${isUser ? "user" : "assistant"}">
           ${isUser ? `
             <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -671,6 +725,59 @@ function escapeHtml(text: string): string {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+// Provider Functions
+async function loadProviders() {
+  try {
+    const response = await fetchAPI<{ providers: typeof availableProviders; defaultProvider: string | null }>("/api/ai/providers");
+    availableProviders = response.providers;
+    if (!selectedProvider && response.defaultProvider) {
+      selectedProvider = response.defaultProvider;
+    }
+    renderProviderSelector();
+  } catch (error) {
+    console.error("Failed to load providers:", error);
+  }
+}
+
+function renderProviderSelector() {
+  const providerContainer = document.getElementById("provider-selector");
+  if (!providerContainer) return;
+  
+  const available = availableProviders.filter(p => p.available);
+  if (available.length <= 1) {
+    providerContainer.style.display = "none";
+    return;
+  }
+  
+  providerContainer.style.display = "flex";
+  providerContainer.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="provider-icon">
+      <rect x="4" y="4" width="16" height="16" rx="2"/>
+      <path d="M9 9h6v6H9z"/>
+    </svg>
+    <select id="provider-select" class="provider-select">
+      ${available.map(p => `
+        <option value="${p.name}" ${p.name === selectedProvider ? 'selected' : ''}>
+          ${p.displayName} - ${p.models[0]}
+        </option>
+      `).join('')}
+    </select>
+  `;
+  
+  const select = document.getElementById("provider-select") as HTMLSelectElement;
+  select?.addEventListener("change", async () => {
+    selectedProvider = select.value;
+    await chrome.storage.local.set({ selectedProvider });
+  });
+}
+
+function updateProviderSelector() {
+  const select = document.getElementById("provider-select") as HTMLSelectElement;
+  if (select && selectedProvider) {
+    select.value = selectedProvider;
+  }
 }
 
 function formatMessageContent(content: string): string {

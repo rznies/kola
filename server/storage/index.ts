@@ -1,4 +1,6 @@
 import { randomUUID } from "crypto";
+import { AppwriteStorage } from "./appwrite";
+import { IStorage, UserPreferences } from "./types";
 import type { 
   User, InsertUser, 
   Snippet, InsertSnippet,
@@ -6,6 +8,8 @@ import type {
   Message, InsertMessage,
   PendingDeletion
 } from "@shared/schema";
+
+export * from "./types";
 
 // Helper to extract domain from URL
 function extractDomain(url: string): string {
@@ -32,60 +36,27 @@ function calculateSimilarity(query: string, text: string): number {
   
   if (queryTokens.size === 0 || textTokens.length === 0) return 0;
   
+  // Calculate how many query tokens are present in the text
   let matches = 0;
-  for (const token of textTokens) {
-    if (queryTokens.has(token)) {
+  const textTokenSet = new Set(textTokens);
+  for (const token of Array.from(queryTokens)) {
+    if (textTokenSet.has(token)) {
       matches++;
     }
   }
   
-  // Jaccard-like similarity with boost for exact phrase matches
-  const textTokenSet = new Set(textTokens);
-  const queryArray = Array.from(queryTokens);
-  const textArray = Array.from(textTokenSet);
-  const union = new Set([...queryArray, ...textArray]);
-  const intersection = matches / Math.max(1, textTokens.length);
+  // Score is percentage of query tokens that matched
+  const queryMatchScore = matches / queryTokens.size;
   
   // Boost for phrase matching
   const queryLower = query.toLowerCase();
   const textLower = text.toLowerCase();
-  const phraseBoost = textLower.includes(queryLower) ? 0.3 : 0;
+  const phraseBoost = textLower.includes(queryLower) ? 0.4 : 0;
   
-  return intersection + phraseBoost;
+  return queryMatchScore + phraseBoost;
 }
 
-export interface IStorage {
-  // Users
-  getUser(id: string): Promise<User | undefined>;
-  getUserByUsername(username: string): Promise<User | undefined>;
-  createUser(user: InsertUser): Promise<User>;
-  
-  // Snippets
-  getSnippet(id: string): Promise<Snippet | undefined>;
-  getAllSnippets(): Promise<Snippet[]>;
-  createSnippet(snippet: InsertSnippet): Promise<Snippet>;
-  deleteSnippet(id: string): Promise<void>;
-  searchSnippets(query: string, limit?: number): Promise<Array<{ snippet: Snippet; score: number }>>;
-  
-  // Pending deletions (for undo)
-  createPendingDeletion(snippetId: string, snippetData: string): Promise<PendingDeletion>;
-  getPendingDeletion(snippetId: string): Promise<PendingDeletion | undefined>;
-  restoreFromPendingDeletion(snippetId: string): Promise<Snippet | undefined>;
-  permanentlyDelete(snippetId: string): Promise<void>;
-  
-  // Threads
-  getThread(id: string): Promise<Thread | undefined>;
-  getAllThreads(): Promise<Thread[]>;
-  createThread(thread: InsertThread): Promise<Thread>;
-  updateThread(id: string, title: string): Promise<Thread | undefined>;
-  deleteThread(id: string): Promise<void>;
-  
-  // Messages
-  getMessage(id: string): Promise<Message | undefined>;
-  getMessagesByThread(threadId: string): Promise<Message[]>;
-  createMessage(message: InsertMessage & { citations?: string[] }): Promise<Message>;
-  deleteMessagesByThread(threadId: string): Promise<void>;
-}
+
 
 export class MemStorage implements IStorage {
   private users: Map<string, User>;
@@ -93,6 +64,7 @@ export class MemStorage implements IStorage {
   private threads: Map<string, Thread>;
   private messages: Map<string, Message>;
   private pendingDeletions: Map<string, PendingDeletion>;
+  private preferences: UserPreferences;
 
   constructor() {
     this.users = new Map();
@@ -100,6 +72,7 @@ export class MemStorage implements IStorage {
     this.threads = new Map();
     this.messages = new Map();
     this.pendingDeletions = new Map();
+    this.preferences = { aiProvider: null };
   }
 
   // Users
@@ -213,12 +186,13 @@ export class MemStorage implements IStorage {
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   }
 
-  async createThread(insertThread: InsertThread): Promise<Thread> {
+  async createThread(insertThread: InsertThread & { aiProvider?: string }): Promise<Thread> {
     const id = randomUUID();
     const now = new Date();
     const thread: Thread = {
       id,
       title: insertThread.title,
+      aiProvider: insertThread.aiProvider || null,
       createdAt: now,
       updatedAt: now,
     };
@@ -291,6 +265,16 @@ export class MemStorage implements IStorage {
       }
     }
   }
+
+  // User Preferences
+  async getPreferences(): Promise<UserPreferences> {
+    return { ...this.preferences };
+  }
+
+  async setPreferences(prefs: Partial<UserPreferences>): Promise<UserPreferences> {
+    this.preferences = { ...this.preferences, ...prefs };
+    return { ...this.preferences };
+  }
 }
 
-export const storage = new MemStorage();
+export const storage = new AppwriteStorage();

@@ -13,7 +13,11 @@ interface SnippetData {
 // Fetch snippets from backend
 async function fetchSnippets(): Promise<SnippetData[]> {
   try {
-    const response = await fetch(`${CONFIG.API_BASE_URL}/api/snippets`);
+    const response = await fetch(`${CONFIG.API_BASE_URL}/api/snippets`, {
+      headers: {
+        "Origin": `chrome-extension://${chrome.runtime.id}`
+      }
+    });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }

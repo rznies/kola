@@ -162,7 +162,10 @@ async function processQueueItem(item: QueueItem): Promise<void> {
       url,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Origin": `chrome-extension://${chrome.runtime.id}`
+        },
         body: JSON.stringify({
           text: item.payload.text,
           sourceUrl: item.payload.sourceUrl,
